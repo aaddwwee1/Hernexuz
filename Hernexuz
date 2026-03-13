@@ -1,6 +1,6 @@
 local KEY = getgenv().KEY or ""
 
-local SCRIPT = "https://raw.githubusercontent.com/aaddwwee1/Hernexuz/refs/heads/main/Hernexuz%20Dev?token=GHSAT0AAAAAADXXQ4ELN5I7KWRP4WAI2LSE2NUI6KQ"
+local SCRIPT = "https://raw.githubusercontent.com/aaddwwee1/Hernexuz/refs/heads/main/Hernexuz%20Dev?token=GHSAT0AAAAAADXXQ4ELQN4TPST7PXKWS3FC2NUJFMQ"
 local API = "http://192.168.1.36:3000/check"
 
 local HttpService = game:GetService("HttpService")
