@@ -1,0 +1,53 @@
+local KEY = getgenv().KEY or ""
+
+local SCRIPT = "https://raw.githubusercontent.com/aaddwwee1/Hernexuz/986d5db3cee4789b4db223d371c059986facff1c/Hernexuz%20Dev"
+local API = "http://YOUR_SERVER:3000/check"
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local HWID = game:GetService("RbxAnalyticsService"):GetClientId()
+
+local function check()
+
+local url = API.."?key="..KEY.."&hwid="..HWID
+
+local success,response = pcall(function()
+return game:HttpGet(url)
+end)
+
+if not success then
+player:Kick("Key server error")
+return false
+end
+
+local data = HttpService:JSONDecode(response)
+
+if data.status == "ok" or data.status == "locked" then
+return true
+end
+
+player:Kick("Key expired or invalid")
+
+return false
+
+end
+
+-- ตรวจคีย์ก่อน
+if not check() then
+return
+end
+
+-- โหลดสคริปต์จริง
+loadstring(game:HttpGet(SCRIPT))()
+
+-- เช็คทุก 10 วิ
+while true do
+task.wait(10)
+
+if not check() then
+break
+end
+
+end
