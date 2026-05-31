@@ -1,567 +1,562 @@
-if not game:IsLoaded() then game.Loaded:Wait() end
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
 
-repeat task.wait() until game.Players.LocalPlayer and game.Players.LocalPlayer.PlayerGui
-local function c() return getgenv() end
-local Service = setmetatable({},{__index = function(self, name) return game:GetService(name) end})
+-- 🎨 RARITY COLORS
+local RARITY_COLORS = {
+    ["Common"] = Color3.fromRGB(200, 200, 200),
+    ["Uncommon"] = Color3.fromRGB(86, 176, 62),
+    ["Rare"] = Color3.fromRGB(0, 162, 255),
+    ["Epic"] = Color3.fromRGB(170, 85, 255),
+    ["Legendary"] = Color3.fromRGB(255, 170, 0),
+    ["Omega"] = Color3.fromRGB(255, 75, 75),
+}
 
-if c().TornadoHub_LOADED then return end; c().TornadoHub_LOADED = true
+-- 🗃️ WEAPON DATABASE
+local WeaponDB = {}
 
-local TweenService = Service.TweenService
-local Players = Service.Players
-local HttpService = Service.HttpService
-local UserInputService = Service.UserInputService
-local ReplicatedStorage = Service.ReplicatedStorage
-local GuiService = Service.GuiService
-local VirtualInputManager = Service.VirtualInputManager
-local Lighting = Service.Lighting
-local RunService = Service.RunService
-local Debris = Service.Debris
+local function registerItems(folder)
+    for _, tool in ipairs(folder:GetChildren()) do
+        local handle = tool:FindFirstChild("Handle")
+        local meshId
+        if handle then
+            local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+            if mesh then
+                meshId = mesh.MeshId
+            elseif handle:IsA("MeshPart") then
+                meshId = handle.MeshId
+            end
+        end
 
-if not c().ACBYPASS then
-    task.spawn(xpcall,function()
-		repeat task.wait(2)
-			if Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and not Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
-				GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui').Frame.PlayButton
-				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-			elseif not Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') then
-				GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('CharacterCreator'):FindFirstChild('MenuFrame').AvatarMenuSkipButton
-				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-			elseif Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
-				GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder'):FindFirstChild('SlideshowCloseButton')
-				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-			elseif not Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and not Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
-				local Net = require(ReplicatedStorage.Modules.Core.Net)
-
-				local func = debug.getupvalue(Net.get,2)
-				debug.setconstant(func,3,"___Bypass")
-				debug.setconstant(func,4,"___Bypass")
-
-				warn([[
-					BYPASS SUCCESSFULLY 
-					BY INPOW LUASYNC SERVICE
-				]])
-
-				identifyexecutor = nil 
-				task.wait()
-				GuiService.SelectedObject = nil
-				c().ACBYPASS = true
-			end
-		until c().ACBYPASS
-    end,warn)
+        if meshId then
+            WeaponDB[meshId] = {
+                Name = tool:GetAttribute("DisplayName") or tool.Name,
+                Rarity = tool:GetAttribute("RarityName") or "Common",
+                ImageId = tool:GetAttribute("ImageId") or "rbxassetid://7072725737",
+            }
+        elseif tool.Name == "Fists" then
+            WeaponDB["Fists"] = {
+                Name = tool:GetAttribute("DisplayName") or "Fists",
+                Rarity = tool:GetAttribute("RarityName") or "Common",
+                ImageId = tool:GetAttribute("ImageId") or "rbxassetid://116170302967943",
+            }
+        else
+            WeaponDB[tool.Name] = {
+                Name = tool:GetAttribute("DisplayName") or tool.Name,
+                Rarity = tool:GetAttribute("RarityName") or "Common",
+                ImageId = tool:GetAttribute("ImageId") or "rbxassetid://7072725737",
+            }
+        end
+    end
 end
 
-repeat task.wait() until c().ACBYPASS
+for _, category in ipairs({"gun", "melee", "throwable", "consumable", "farming", "misc", "rod", "fish"}) do
+    registerItems(ReplicatedStorage:WaitForChild("Items")[category])
+end
 
-local Client = Players.LocalPlayer
-local Character = Client.Character or Client.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
-local PlayerGui = Client:WaitForChild("PlayerGui")
-local Backpack = Client:WaitForChild("Backpack")
+local function getMeshId(tool)
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return nil end
+    local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+    if mesh then return mesh.MeshId end
+    if handle:IsA("MeshPart") then return handle.MeshId end
+    return nil
+end
 
-Client.CharacterAdded:Connect(function(newCharacter)
-	Character = newCharacter
-	Humanoid = Character:WaitForChild("Humanoid")
-	RootPart = Character:WaitForChild("HumanoidRootPart")
-	Backpack = Client:WaitForChild("Backpack")
+local function getWeaponInfo(tool)
+    local meshId = getMeshId(tool)
+    if meshId and WeaponDB[meshId] then
+        return WeaponDB[meshId]
+    elseif tool.Name == "Fists" and WeaponDB["Fists"] then
+        return WeaponDB["Fists"]
+    elseif WeaponDB[tool.Name] then
+        return WeaponDB[tool.Name]
+    else
+        return {
+            Name = "หมัด",
+            Rarity = "Common",
+            ImageId = "rbxassetid://116170302967943"
+        }
+    end
+end
 
-	RootPart:FindFirstChild("CharacterBillboardGui").Enabled = not c().HideName
+local function getHighestRarity(tools)
+    local order = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Omega=6}
+    local max = "Common"
+    for _, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+        if order[info.Rarity] and order[info.Rarity] > order[max] then
+            max = info.Rarity
+        end
+    end
+    return max
+end
+
+-- 🖼️ GUI
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local ScreenGui = Instance.new("ScreenGui", PlayerGui)
+ScreenGui.Name = "InventoryViewerGUI"
+
+-- FRAME สำหรับรายการผู้เล่น (ย่อ/ขยายได้)
+local listFrame = Instance.new("Frame", ScreenGui)
+listFrame.Size = UDim2.new(0, 180, 0.4, 0)
+listFrame.Position = UDim2.new(0, 10, 0.3, 0)
+listFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+listFrame.BackgroundTransparency = 0.2
+Instance.new("UICorner", listFrame).CornerRadius = UDim.new(0, 8)
+
+local playerList = Instance.new("ScrollingFrame", listFrame)
+playerList.Size = UDim2.new(1, -10, 1, -50)
+playerList.Position = UDim2.new(0, 5, 0, 5)
+playerList.BackgroundTransparency = 1
+playerList.ScrollBarThickness = 6
+playerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Instance.new("UIListLayout", playerList).Padding = UDim.new(0, 4)
+
+local resetButton = Instance.new("TextButton", listFrame)
+resetButton.Size = UDim2.new(1, -10, 0, 30)
+resetButton.Position = UDim2.new(0, 5, 1, -35)
+resetButton.Text = "Refresh"
+resetButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+resetButton.TextColor3 = Color3.new(1, 1, 1)
+resetButton.Font = Enum.Font.GothamBold
+resetButton.TextScaled = true
+Instance.new("UICorner", resetButton).CornerRadius = UDim.new(0, 6)
+
+-- ปุ่มย่อ/ขยาย GUI
+local toggleButton = Instance.new("TextButton", listFrame)
+toggleButton.Size = UDim2.new(0, 30, 0, 30)
+toggleButton.Position = UDim2.new(1, -40, 0, 0)
+toggleButton.Text = "<<"
+toggleButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextScaled = true
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0, 6)
+
+local invFrame = Instance.new("Frame", ScreenGui)
+invFrame.Size = UDim2.new(0, 350, 0, 300)
+invFrame.Position = UDim2.new(0, 200, 0.3, 0)
+invFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+invFrame.BackgroundTransparency = 0.2
+invFrame.Visible = false
+Instance.new("UICorner", invFrame).CornerRadius = UDim.new(0, 8)
+
+local invTitle = Instance.new("TextLabel", invFrame)
+invTitle.Size = UDim2.new(1, -40, 0, 30)
+invTitle.Position = UDim2.new(0, 5, 0, 0)
+invTitle.BackgroundTransparency = 1
+invTitle.TextColor3 = Color3.new(1, 1, 1)
+invTitle.Font = Enum.Font.GothamBold
+invTitle.TextScaled = true
+invTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local closeButton = Instance.new("TextButton", invFrame)
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 0)
+closeButton.Text = "X"
+closeButton.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextScaled = true
+Instance.new("UICorner", closeButton).CornerRadius = UDim.new(0, 6)
+
+local invList = Instance.new("ScrollingFrame", invFrame)
+invList.Position = UDim2.new(0, 10, 0, 40)
+invList.Size = UDim2.new(1, -20, 1, -50)
+invList.BackgroundTransparency = 1
+invList.ScrollBarThickness = 6
+invList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Instance.new("UIListLayout", invList).Padding = UDim.new(0, 5)
+
+closeButton.MouseButton1Click:Connect(function()
+    invFrame.Visible = false
 end)
 
-local func = {}
-local RarityData = {
-	Common = Color3.fromRGB(255, 255, 255),
-	Uncommon = Color3.fromRGB(99, 255, 52),
-	Rare = Color3.fromRGB(51, 170, 255),
-	Epic = Color3.fromRGB(237, 44, 255),
-	Legendary = Color3.fromRGB(255, 150, 0),
-	Omega = Color3.fromRGB(255, 20, 51)
-}
-local DrawingsData = {
-	Players = {},
-	Item = {}
-}
+-- ตัวแปรเก็บปุ่มผู้เล่น
+local playerButtons = {}
+local BillboardCache = {}
 
-local DroppedFolder = workspace:FindFirstChild('DroppedItems')
-local Vehicles = workspace:FindFirstChild("Vehicles")
+-- ปิดสคริปต์หลัก (ทำให้ไม่อัพเดต Billboard, ไม่สร้างปุ่มใหม่)
+local scriptEnabled = false
 
-local CurrentCamera = workspace.CurrentCamera
+-- ฟังก์ชันสร้าง Billboard สำหรับผู้เล่น (ถ้าเปิดสคริปต์)
+local function createBillboardForPlayer(player)
+    if not scriptEnabled then return end
+    if player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
 
-local Char = require(ReplicatedStorage.Modules.Core.Char)
-local Util = require(ReplicatedStorage.Modules.Core.Util)
-local Data = require(ReplicatedStorage.Modules.Core.Data)
-local SprintModule = require(ReplicatedStorage.Modules.Game.Sprint)
-local Network = require(ReplicatedStorage.Modules.Core.Net)
-local RagdollModule = require(ReplicatedStorage.Modules.Game.Ragdoll)
-local VehicleSystem = require(ReplicatedStorage.Modules.Game.VehicleSystem.Vehicle)
-local CrateController = require(ReplicatedStorage.Modules.Game.CrateSystem.Crate)
-
-local Config_Manager = loadstring(game:HttpGet("https://raw.githubusercontent.com/Yenixs/ToolScript/refs/heads/main/ConfigManager.luau"))()('Blockspin_ZahraHunEDITION',c())
-Config_Manager.SC()
-
-local function GetDistanceRoot(Objective)
-	if typeof(Objective) == "Instance" then
-		if Objective:IsA("BasePart") then
-			return (Objective.Position - RootPart.Position).Magnitude
-        elseif Objective:IsA('Model') then 
-            return (Objective:GetPivot().Position - RootPart.Position).Magnitude
-		else
-			return 0
-		end
-	elseif typeof(Objective) == "Vector3" then
-		return (Objective - RootPart.Position).Magnitude
-	elseif typeof(Objective) == "CFrame" then 
-		return (Objective.Position - RootPart.Position).Magnitude
-	end
-	return 0
-end
-
-local function GetDistanceStart(Objective, Start)
-	if typeof(Objective) == "Vector3" and typeof(Start) == "Vector3" then
-		return (Objective - Start).Magnitude		
-	elseif typeof(Objective) == "Vector2" and typeof(Start) == "Vector2" then
-		return (Objective - Start).Magnitude
-	else
-		return math.huge
-	end
-end
-
-local function IsAlive(model)
-    if not model then return false; end
-    local Humanoids = model:FindFirstChildOfClass('Humanoid')
-    if not Humanoids then return false; end
-    local RootParts = model:FindFirstChild('HumanoidRootPart')
-    if not RootParts then return false;  end
-    return Humanoids.Health > 0 and true or false
-end
-
-local function UserData() 
-	local a = {}
-
-	function a.Money()
-		local hand_balance = Data.money.hand
-		local bank_balance = Data.money.bank
-		return {
-			Hand = hand_balance,
-			Bank = bank_balance,
-		}
-	end
-
-	return a 
-end
-
-local function Connecter(e,f)
-	local Connection = e:Connect(f)
-	return Connection
-end
-
-local function Draw(type, props)
-	local obj = Drawing.new(type)
-
-	for k, v in pairs(props or {}) do obj[k] = v end
-
-	return obj
-end
-
-local function SortAttribute(instance)
-	local keys = {}
-
-	for key in pairs(instance:GetAttributes()) do
-		table.insert(keys, key)
-	end
-
-	table.sort(keys)
-
-	return keys
-end
-
-local function IsBehindWall(startPos, endPos)
-	if not startPos or not endPos then
-		return false
-	end
-	local ray = Ray.new(startPos, endPos - startPos)
-	local ignoreList = {}
-	if Character then
-		table.insert(ignoreList, Character)
-	end
-	local targets = c().AimAssiantTarget
-	if targets then
-		table.insert(ignoreList, targets)
-	end
-	local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList)
-	return hit ~= nil
-end
-
-local function WorldToViewPoint(obj)
-	local pos = typeof(obj) == "Vector3" and obj or obj.Position
-	local vp, onScreen = CurrentCamera:WorldToViewportPoint(pos)
-	return vp, onScreen
-end;
-
-local function solveQuadratic(A, B, C)
-	local discriminant = B^2 - 4*A*C
-	if discriminant < 0 then
-		return nil, nil
-	end
-
-	local sqrtDisc = math.sqrt(discriminant)
-	local root1 = (-B - sqrtDisc) / (2*A)
-	local root2 = (-B + sqrtDisc) / (2*A)
-
-	return root1, root2
-end
-
-local function getBallisticFlightTime(direction, gravity, projectileSpeed)
-	local root1, root2 = solveQuadratic(
-		gravity:Dot(gravity) / 3.8,
-		gravity:Dot(direction) - projectileSpeed^2,
-		direction:Dot(direction)
-	);
-
-	if root1 and root2 then
-		if root1 > 0 and root1 < root2 then
-			return math.sqrt(root1);
-		elseif root2 > 0 and root2 < root1 then
-			return math.sqrt(root2);
-		end;
-	end;
-
-	return 0;
-end;
-
-local function projectileDrop(acceleration, time)
-	return 0.001 * acceleration * (time ^ 2)
-end
-
-local function PredictPosition(targetPos, approxVel, travelTime, gravity)
-	return targetPos + approxVel * travelTime + projectileDrop(gravity,travelTime)
-end
-
-local function GetDeltaY(basePositionY, currentPositionY, offset)
-	local targetY = basePositionY - offset
-	local deltaY = targetY - currentPositionY
-	return deltaY
-end
-
-do
-	do
-		local Circle = Draw("Circle", {
-			Visible = false,
-			Color = Color3.fromRGB(255, 255, 255),
-			Radius = 200,
-			Thickness = 1,
-			Filled = false
-		})
-		
-		for i, v in pairs(Players:GetPlayers()) do
-			if v ~= Client then
-				DrawingsData.Players[v] = {
-					BoxAround = Draw("Square",{
-						Visible = false,
-						Color = Color3.fromRGB(255, 0, 0),
-						Thickness = 1,
-						Transparency = 1,
-						Filled = false
-					}),
-
-					IsTargetAim = Draw("Square",{
-						Visible = false,
-						Color = Color3.fromRGB(255, 255, 255),
-						Thickness = 1,
-						Transparency = 1,
-						Filled = false
-					}),
-
-					HpBar = Draw("Line", {
-						Visible = false,
-						Color = Color3.new(0, 1, 0),
-						Thickness = 2
-					}),
-
-					Name = Draw("Text",{
-						Visible = false,
-						Color = Color3.new(1, 1, 1),
-						Size = 15,
-						Center = true,
-						Outline = true,
-						OutlineColor = Color3.new(0, 0, 0),
-						Text = Players[v.Name].Name
-					}),
-
-					Distance = Draw("Text",{
-						Visible = false,
-						Color = Color3.new(1, 1, 1),
-						Size = 15,
-						Center = true,
-						Outline = true,
-						OutlineColor = Color3.new(0, 0, 0),
-						Text = ""
-					}),
-
-					AimTracer = Draw("Line", {
-						Visible = false,
-						Color = Color3.fromRGB(255, 255, 255),
-						Thickness = 1
-					})
-				}
-			end
-		end
-			
-		Connecter(Players.PlayerAdded,function(player)
-			if player ~= Client then
-				DrawingsData.Players[player] = {
-					BoxAround = Draw("Square",{
-						Visible = false,
-						Color = Color3.fromRGB(255, 0, 0),
-						Thickness = 1,
-						Transparency = 1,
-						Filled = false
-					}),
-
-					IsTargetAim = Draw("Square",{
-						Visible = false,
-						Color = Color3.fromRGB(255, 255, 255),
-						Thickness = 1,
-						Transparency = 1,
-						Filled = false
-					}),
-
-					HpBar = Draw("Line", {
-						Visible = false,
-						Color = Color3.new(0, 1, 0),
-						Thickness = 2
-					}),
-
-					Name = Draw("Text",{
-						Visible = false,
-						Color = Color3.new(1, 1, 1),
-						Size = 15,
-						Center = true,
-						Outline = true,
-						OutlineColor = Color3.new(0, 0, 0),
-						Text = player.Name
-					}),
-
-					Distance = Draw("Text",{
-						Visible = false,
-						Color = Color3.new(1, 1, 1),
-						Size = 15,
-						Center = true,
-						Outline = true,
-						OutlineColor = Color3.new(0, 0, 0),
-						Text = ""
-					}),
-
-					AimTracer = Draw("Line", {
-						Visible = false,
-						Color = Color3.fromRGB(255, 255, 255),
-						Thickness = 1
-					})
-				}
-				task.wait()
-			end
-		end)
-					
-		Connecter(Players.PlayerRemoving,function(player)
-			if DrawingsData.Players[player] then
-				for _, drawing in pairs(DrawingsData.Players[player]) do
-					if drawing.Remove then
-						drawing:Remove()
-						task.wait()
-					end
-				end
-				DrawingsData.Players[player] = nil
-			end
-		end)
-
-		Connecter(RunService.Heartbeat, function()
-			if c().AntiAimAssiant then   
-				local HumanoidModule = Char.get_hum()
-				if HumanoidModule and not HumanoidModule:GetAttribute("HasBeenDowned") then 
-					local RootPartModule = Char.get_hrp()
-					local A,B,C = RootPartModule.Velocity,RootPartModule.AssemblyLinearVelocity,RootPartModule.AssemblyAngularVelocity
-					RootPartModule.Velocity = Vector3.new(math.random(-100000,999999),math.random(-100000,999999),math.random(-100000,999999))
-					RootPartModule.AssemblyLinearVelocity = Vector3.new(math.random(-100000,999999),math.random(-100000,999999),math.random(-100000,999999))
-					RootPartModule.AssemblyAngularVelocity = Vector3.new(math.random(-100000,999999),math.random(-100000,999999),math.random(-100000,999999))
-					RunService.RenderStepped:Wait()
-					RootPartModule.Velocity = A
-					RootPartModule.AssemblyLinearVelocity = B
-					RootPartModule.AssemblyAngularVelocity = C
-				end
-			end
-		end)
-
-		Connecter(RunService.RenderStepped, function()
-			if Circle  then
-				Circle.Radius = c().PovSize or 200
-				Circle.Visible = c().AimAssiant or false
-				Circle.Color = c().RainbowPov and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Color3.fromRGB(255, 255, 255)
-				Circle.Position = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
-			end
-						
-			for _, DrawObject in pairs(DrawingsData.Players) do
-				DrawObject.AimTracer.Visible = false
-				DrawObject.IsTargetAim.Visible = false
-			end
-
-				
-			local ClosestTarget, ClosestDistance = nil, math.huge
-
-			for _, TargetChar in pairs(Char.get_all()) do
-				if TargetChar ~= Character and IsAlive(TargetChar) then
-					local GetTargetPlayer = Players:GetPlayerFromCharacter(TargetChar)
-					if GetTargetPlayer and not GetTargetPlayer:GetAttribute("InMenuCharacterCreator") and not GetTargetPlayer:GetAttribute("InSplashScreen") and not GetTargetPlayer:GetAttribute('IsSafeZoneProtected') and not TargetChar:GetAttribute('IsSpawnProtected') then
-						local Root = TargetChar:FindFirstChild("HumanoidRootPart")
-						if Root then
-							if not (c().FriendIngore and GetTargetPlayer:IsFriendsWith(Client.UserId)) then
-								local ScreenPos, OnScreen = WorldToViewPoint(Root)
-								if OnScreen then
-									local Vector2ScreenPos = Vector2.new(ScreenPos.X, ScreenPos.Y)
-									local DistanceStart = GetDistanceStart(Vector2ScreenPos, Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2))
-									if DistanceStart <= Circle.Radius and DistanceStart < ClosestDistance then
-										ClosestTarget = TargetChar
-										ClosestDistance = DistanceStart
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-
-			c().AimAssiantTarget = ClosestTarget
-
-			if ClosestTarget then  
-				local GetTargetPlayer = Players:GetPlayerFromCharacter(ClosestTarget)
-				if GetTargetPlayer then  
-					local DrawObject = DrawingsData.Players[GetTargetPlayer]
-					if DrawObject then  
-						local SelectPart = ClosestTarget:FindFirstChild((c().PartTargetSelected or "Head"))
-						if SelectPart then  
-							local PositionScreen, OnScreen = WorldToViewPoint(SelectPart)
-
-							DrawObject.AimTracer.Color = Color3.fromRGB(125, 21, 19)
-
-							DrawObject.AimTracer.Visible = (c().AimAssiant and OnScreen) or false
-							DrawObject.AimTracer.From = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
-							DrawObject.AimTracer.To = Vector2.new(PositionScreen.X, PositionScreen.Y)
-
-							DrawObject.IsTargetAim.Size = Vector2.new(1000 / PositionScreen.Z, 1000 / PositionScreen.Z)
-							DrawObject.IsTargetAim.Position = Vector2.new(PositionScreen.X - Vector2.new(1000 / PositionScreen.Z, 1000 / PositionScreen.Z).X / 2, PositionScreen.Y - Vector2.new(1000 / PositionScreen.Z, 1000 / PositionScreen.Z).Y / 2)
-							DrawObject.IsTargetAim.Color = Color3.fromRGB(180, 0, 0)
-							DrawObject.IsTargetAim.Visible = (c().AimAssiant and OnScreen) or false
-						end
-					end
-				end
-			end
-			
-			for PlayerObject, DrawObject in pairs(DrawingsData.Players) do  
-				if PlayerObject and IsAlive(PlayerObject.Character) then  
-					local CharP = PlayerObject.Character
-					local Root = CharP:FindFirstChild('HumanoidRootPart')
-					local Head = CharP:FindFirstChild('Head')
-					local ControllerNpc = CharP:FindFirstChildOfClass("Humanoid")
-					if Root and Head and ControllerNpc then 
-						local PositionRoot, OnScreen = WorldToViewPoint(Root)
-						if OnScreen then  
-							local PositionHead,_ = WorldToViewPoint(Head.Position + Vector3.new(0, 0.5, 0))
-							local PositionLeg,_ = WorldToViewPoint(Root.Position - Vector3.new(0, 3, 0))
-							local ScaleRoot = 1000 / PositionRoot.Z
-
-							DrawObject.BoxAround.Size = Vector2.new(ScaleRoot, PositionHead.Y - PositionLeg.Y)
-							DrawObject.BoxAround.Position = Vector2.new(PositionRoot.X - DrawObject.BoxAround.Size.X / 2, PositionRoot.Y - DrawObject.BoxAround.Size.Y / 2)
-							DrawObject.BoxAround.Visible = c().BoxPlayerVisual or false
-							DrawObject.BoxAround.Color = (c().FriendIngore and PlayerObject:IsFriendsWith(Client.UserId)) and Color3.fromRGB(4, 43, 150) or PlayerObject:GetAttribute('IsSafeZoneProtected') == true and Color3.fromRGB(7, 255, 44) or CharP:GetAttribute('IsSpawnProtected') == true and Color3.fromRGB(3, 41, 255) or Color3.fromRGB(201, 12, 204)
-
-							DrawObject.Name.Position = Vector2.new(PositionHead.X, PositionHead.Y - 20)
-							DrawObject.Name.Text = PlayerObject.Name
-							DrawObject.Name.Visible = c().NamePlayerVisual or false 
-
-							DrawObject.Distance.Text = "[" .. math.floor(GetDistanceRoot(Root)) .. "m]"
-							DrawObject.Distance.Position = Vector2.new(PositionHead.X, PositionLeg.Y + 5)
-							DrawObject.Distance.Visible = c().DistancePlayerVisual or false
-
-							local HealthNpc = ControllerNpc.Health / ControllerNpc.MaxHealth
-							DrawObject.HpBar.From = Vector2.new(DrawObject.BoxAround.Position.X + DrawObject.BoxAround.Size.X + 5, DrawObject.BoxAround.Position.Y + DrawObject.BoxAround.Size.Y * (1 - HealthNpc))
-							DrawObject.HpBar.To = Vector2.new(DrawObject.BoxAround.Position.X + DrawObject.BoxAround.Size.X + 5, DrawObject.BoxAround.Position.Y + DrawObject.BoxAround.Size.Y)
-							DrawObject.HpBar.Color = Color3.new(1 - HealthNpc, HealthNpc, 0)
-							DrawObject.HpBar.Visible = c().HealthPlayerVisual or false
-
-						else  
-							for _,DrawingObjectData in pairs(DrawObject) do 
-								DrawingObjectData.Visible = false
-							end
-						end
-					else  
-						for _,DrawingObjectData in pairs(DrawObject) do 
-							DrawingObjectData.Visible = false
-						end
-					end
-				else  
-					for _,DrawingObjectData in pairs(DrawObject) do 
-						DrawingObjectData.Visible = false
-					end
-				end
-			end
-					
-			for DropItem, DrawObject in pairs(DrawingsData.Item) do
-				if not DropItem or not DropItem.Parent then
-					if DrawObject.BoxAround then DrawObject.BoxAround:Remove() end
-					if DrawObject.NameItem then DrawObject.NameItem:Remove() end
-					if DrawObject.Distance then DrawObject.Distance:Remove() end
-					DrawingsData.Item[DropItem] = nil
-				end
-			end
-			
-			for _, DropItemObject in pairs(DroppedFolder:GetChildren()) do
-				if DropItemObject:IsA("Model") and DropItemObject:FindFirstChild("PickUpZone") and not DropItemObject:GetAttribute("Locked") then 
-					if not DrawingsData.Item[DropItemObject] then 
-						DrawingsData.Item[DropItemObject] = {
-							BoxAround = Draw("Square", {
-								Color = Color3.fromRGB(255, 0, 0),
-								Thickness = 1,
-								Filled = false
-							}),
-							NameItem = Draw("Text", {
-								Color = Color3.fromRGB(255, 255, 255),
-								Outline = true,
-								Center = true
-							}),
-							Distance = Draw("Text", {
-								Color = Color3.fromRGB(255, 255, 255),
-								Outline = true,
-								Center = true
-							})
-						}
-					end
-				end
-			end
-			
-			for ItemObject, DrawObject in pairs(DrawingsData.Item) do   
-				local PickUpZone = ItemObject.PickUpZone
-				local Position2D, OnScreen = WorldToViewPoint(PickUpZone)
-
-				if OnScreen then 
-        local RarityName = ReplicatedStorage:FindFirstChild("Items"):FindFirstChild(ItemObject:GetAttribute("item_type")):FindFirstChild(ItemObject.Name):GetAttribute("RarityName")
-        local StateVisibleDrop = ((ItemObject.Name == "Money" and (c().ItemDropVisual or false)) or (#c().BlacklistRarityDropVisual == 0 and (c().ItemDropVisual or false)) or (#c().BlacklistRarityDropVisual > 0 and not table.find(c().BlacklistRarityDropVisual, RarityName) and (c().ItemDropVisual or false))) or false
-        
-        -- นำค่าที่คำนวณได้ (StateVisibleDrop) ไปใช้กับ Object
-        DrawObject.BoxAround.Visible = StateVisibleDrop
-    else
-        -- ถ้าไม่อยู่บนหน้าจอ ให้ซ่อนไว้เสมอ
-        DrawObject.BoxAround.Visible = false
+    if BillboardCache[player] then
+        BillboardCache[player]:Destroy()
     end
-					DrawObject.BoxAround.Size = Vector2.new(15,15)
-DrawObject.BoxAround.Position = Vector2.new(Position2D.X - 15 / 2, Position2D.Y - 15 / 2)
-DrawObject.BoxAround.Visible = true
--- โค้ดของคุณควรจะมีโครงสร้างประมาณนี้:
-if ... then -- (เปิดบรรทัด 547)
-    do -- (เปิดบรรทัด 543)
-        DrawObject.BoxAround.Size = Vector2.new(15,15)
-        DrawObject.BoxAround.Position = Vector2.new(Position2D.X - 15 / 2, Position2D.Y - 15 / 2)
-        DrawObject.BoxAround.Visible = true
-    end -- <--- เพิ่มอันนี้เพื่อปิด 'do'
-end -- <--- เพิ่มอันนี้เพื่อปิด 'if'
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Adornee = hrp
+    billboard.Size = UDim2.new(0, 150, 0, 30)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = char
+
+    billboard:ClearAllChildren()
+
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    local padding = 8
+    local imageSize = 28
+    local layout = Instance.new("UIListLayout", billboard)
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, padding)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    for i, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+        
+        -- ข้ามถ้า Rarity = "Common"
+        if info.Rarity ~= "Common" then
+            local img = Instance.new("ImageLabel", billboard)
+            img.Size = UDim2.new(0, imageSize, 0, imageSize)
+            img.BackgroundTransparency = 1
+            img.Image = info.ImageId
+            img.LayoutOrder = i
+
+            local uicorner = Instance.new("UICorner", img)
+            uicorner.CornerRadius = UDim.new(0, 15)
+
+            local border = Instance.new("Frame", img)
+            border.Size = UDim2.new(1, 6, 1, 6)
+            border.Position = UDim2.new(0, -3, 0, -3)
+            border.ZIndex = img.ZIndex - 1
+            border.BackgroundColor3 = RARITY_COLORS[info.Rarity] or Color3.new(1, 1, 1)
+            border.AnchorPoint = Vector2.new(0, 0)
+            border.ClipsDescendants = true
+            local borderCorner = Instance.new("UICorner", border)
+            borderCorner.CornerRadius = UDim.new(0, 8.5)
+        end
+    end
+
+    BillboardCache[player] = billboard
+end
+
+local function showInventory(player)
+    invTitle.Text = "Inventory: " .. player.Name
+    invFrame.Visible = true
+
+    for _, c in ipairs(invList:GetChildren()) do
+        if not c:IsA("UIListLayout") then
+            c:Destroy()
+        end
+    end
+
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    for _, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+
+        local frame = Instance.new("Frame", invList)
+        frame.Size = UDim2.new(1, -10, 0, 50)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        frame.BorderSizePixel = 0
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+
+        local img = Instance.new("ImageLabel", frame)
+        img.Size = UDim2.new(0, 40, 0, 40)
+        img.Position = UDim2.new(0, 5, 0, 5)
+        img.Image = info.ImageId
+        img.BackgroundTransparency = 1
+        Instance.new("UICorner", img).CornerRadius = UDim.new(0, 6)
+
+        -- Tooltip แสดง rarity เวลาชี้
+        local tooltip = Instance.new("TextLabel")
+        tooltip.Size = UDim2.new(0, 100, 0, 25)
+        tooltip.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        tooltip.TextColor3 = RARITY_COLORS[info.Rarity] or Color3.new(1,1,1)
+        tooltip.Text = info.Rarity
+        tooltip.Font = Enum.Font.GothamBold
+        tooltip.TextSize = 14
+        tooltip.TextWrapped = true
+        tooltip.Visible = false
+        tooltip.Parent = frame
+        tooltip.AnchorPoint = Vector2.new(0.5, 1)
+
+        img.MouseEnter:Connect(function()
+            tooltip.Visible = true
+            local absPos = img.AbsolutePosition
+            tooltip.Position = UDim2.new(0, absPos.X + img.AbsoluteSize.X/2, 0, absPos.Y - 30)
+            tooltip.ZIndex = 10
+        end)
+        img.MouseLeave:Connect(function()
+            tooltip.Visible = false
+        end)
+
+        local name = Instance.new("TextLabel", frame)
+        name.Size = UDim2.new(1, -50, 1, 0)
+        name.Position = UDim2.new(0, 50, 0, 0)
+        name.TextColor3 = RARITY_COLORS[info.Rarity] or Color3.new(1,1,1)
+        name.Text = info.Name
+        name.Font = Enum.Font.GothamBold
+        name.TextSize = 18
+        name.TextXAlignment = Enum.TextXAlignment.Left
+        name.BackgroundTransparency = 1
+    end
+end
+
+local function createPlayerButton(player)
+    if not scriptEnabled then return end
+
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    local button = Instance.new("TextButton", playerList)
+    button.Size = UDim2.new(1, -10, 0, 28)
+    button.Text = player.Name
+    button.TextScaled = true
+    button.Font = Enum.Font.GothamBold
+    button.BackgroundColor3 = RARITY_COLORS[getHighestRarity(tools)] or Color3.fromRGB(40, 40, 40)
+    button.TextColor3 = Color3.new(1, 1, 1)
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 6)
+
+    button.MouseButton1Click:Connect(function()
+        showInventory(player)
+    end)
+
+    createBillboardForPlayer(player)
+
+    playerButtons[player] = button
+end
+
+local function refreshPlayerList()
+    if not scriptEnabled then return end
+
+    for _, child in ipairs(playerList:GetChildren()) do
+        if child:IsA("TextButton") and child ~= resetButton and child ~= toggleButton then child:Destroy() end
+    end
+    playerButtons = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            createPlayerButton(p)
+        end
+    end
+end
+
+resetButton.MouseButton1Click:Connect(refreshPlayerList)
+
+Players.PlayerAdded:Connect(function(p)
+    if p ~= LocalPlayer and scriptEnabled then
+        createPlayerButton(p)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if playerButtons[p] then
+        playerButtons[p]:Destroy()
+        playerButtons[p] = nil
+    end
+    if BillboardCache[p] then
+        BillboardCache[p]:Destroy()
+        BillboardCache[p] = nil
+    end
+end)
+
+toggleButton.MouseButton1Click:Connect(function()
+    scriptEnabled = not scriptEnabled
+    if scriptEnabled then
+        toggleButton.Text = ">>"
+        listFrame.Size = UDim2.new(0, 180, 0.4, 0)
+        listFrame.Position = UDim2.new(0, 10, 0.3, 0)
+        resetButton.Visible = true
+        playerList.Visible = true
+        refreshPlayerList()
+    else
+        toggleButton.Text = "<<"
+        listFrame.Size = UDim2.new(0, 40, 0.4, 0)
+        listFrame.Position = UDim2.new(0, 10, 0.3, 0)
+        resetButton.Visible = false
+        playerList.Visible = false
+        invFrame.Visible = false
+        for p, btn in pairs(playerButtons) do
+            if btn then btn:Destroy() end
+        end
+        playerButtons = {}
+    end
+end)
+
+-- สร้าง Frame แจ้งเตือนที่มุมขวาล่างของหน้าจอ
+local alertFrame = Instance.new("Frame", ScreenGui)
+alertFrame.AnchorPoint = Vector2.new(1, 1)
+alertFrame.Position = UDim2.new(1, -10, 1, -10)
+alertFrame.Size = UDim2.new(0, 300, 0, 0) -- เริ่มด้วยสูง 0
+alertFrame.BackgroundTransparency = 1
+alertFrame.ClipsDescendants = true
+
+local UIListLayout = Instance.new("UIListLayout", alertFrame)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+-- ฟังก์ชันสร้าง alert เด้ง
+local function showAlert(playerName, rarity)
+    local color = RARITY_COLORS[rarity] or Color3.new(1,1,1)
+
+    local alert = Instance.new("Frame", alertFrame)
+    alert.Size = UDim2.new(1, 0, 0, 40)
+    alert.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    alert.BorderSizePixel = 0
+    alert.ClipsDescendants = true
+    alert.LayoutOrder = tick()
+    alert.AnchorPoint = Vector2.new(0.5, 0.5)
+    alert.Position = UDim2.new(0.5, 0, 0.5, 0)
+    alert.BackgroundTransparency = 1  -- เริ่มโปร่งใส
+
+    local uicorner = Instance.new("UICorner", alert)
+    uicorner.CornerRadius = UDim.new(0, 10)
+
+    local bgGradient = Instance.new("UIGradient", alert)
+    bgGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 220, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+    }
+    bgGradient.Rotation = 90
+
+    local textLabel = Instance.new("TextLabel", alert)
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = 15
+    textLabel.TextColor3 = color
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Text = ("ชื่อผู้เล่น : %s   ระดับความแรร์ : %s"):format(playerName, rarity)
+
+    -- ปรับขนาด alertFrame สูงขึ้นเพื่อรองรับ alert ใหม่
+    alertFrame.Size = UDim2.new(0, 300, 0, alertFrame.Size.Y.Offset + 45)
+
+    local tweenService = game:GetService("TweenService")
+
+    -- สเกลเล็ก ๆ ก่อน (เหมือนลูกบอลกลิ้งมา)
+    alert.Size = UDim2.new(0, 0, 0, 0)
+    alert.Position = UDim2.new(0.5, 0, 0.5, 0)
+
+    local tweenInSize = tweenService:Create(alert, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 0})
+    local tweenBounce = tweenService:Create(alert, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(1.05, 0, 0, 44)})
+    local tweenBounceBack = tweenService:Create(alert, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(1, 0, 0, 40)})
+
+    tweenInSize:Play()
+    tweenInSize.Completed:Connect(function()
+        tweenBounce:Play()
+        tweenBounce.Completed:Connect(function()
+            tweenBounceBack:Play()
+            tweenBounceBack.Completed:Connect(function()
+                wait(5) -- แสดง alert 3 วิ
+
+                local tweenOut = tweenService:Create(alert, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)})
+                tweenOut:Play()
+                tweenOut.Completed:Connect(function()
+                    alert:Destroy()
+                    alertFrame.Size = UDim2.new(0, 300, 0, alertFrame.Size.Y.Offset - 45)
+                end)
+            end)
+        end)
+    end)
+end
+
+-- ตรวจสอบผู้เล่นที่มีของ Rare ขึ้นไปและแจ้งเตือน
+local alertedPlayers = {}
+
+local function checkAndAlert(player)
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then
+                    table.insert(tools, tool)
+                end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then
+                table.insert(tools, tool)
+            end
+        end
+    end
+
+    local order = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Omega=6}
+    local maxRarity = "Common"
+    for _, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+        if order[info.Rarity] and order[info.Rarity] > order[maxRarity] then
+            maxRarity = info.Rarity
+        end
+    end
+
+    if order[maxRarity] and order[maxRarity] >= order["Uncommon"] then
+        if not alertedPlayers[player] or alertedPlayers[player] ~= maxRarity then
+            alertedPlayers[player] = maxRarity
+            showAlert(player.Name, maxRarity)
+        end
+    else
+        alertedPlayers[player] = nil
+    end
+end
+
+-- อัพเดตตรวจสอบทุกวินาทีครึ่ง
+spawn(function()
+    while true do
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                checkAndAlert(p)
+            end
+        end
+        wait(0.5)
+    end
+end)
+
+-- ปิดสคริปต์ตอนเริ่มต้น (GUI อยู่แต่สคริปต์ไม่ทำงาน)
+scriptEnabled = true
+toggleButton.Text = "<<"
+resetButton.Visible = true
+playerList.Visible = true
