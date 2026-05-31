@@ -1,0 +1,567 @@
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+repeat task.wait() until game.Players.LocalPlayer and game.Players.LocalPlayer.PlayerGui
+local function c() return getgenv() end
+local Service = setmetatable({},{__index = function(self, name) return game:GetService(name) end})
+
+if c().TornadoHub_LOADED then return end; c().TornadoHub_LOADED = true
+
+local TweenService = Service.TweenService
+local Players = Service.Players
+local HttpService = Service.HttpService
+local UserInputService = Service.UserInputService
+local ReplicatedStorage = Service.ReplicatedStorage
+local GuiService = Service.GuiService
+local VirtualInputManager = Service.VirtualInputManager
+local Lighting = Service.Lighting
+local RunService = Service.RunService
+local Debris = Service.Debris
+
+if not c().ACBYPASS then
+    task.spawn(xpcall,function()
+		repeat task.wait(2)
+			if Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and not Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
+				GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui').Frame.PlayButton
+				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+			elseif not Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') then
+				GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('CharacterCreator'):FindFirstChild('MenuFrame').AvatarMenuSkipButton
+				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+			elseif Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
+				GuiService.SelectedObject = Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder'):FindFirstChild('SlideshowCloseButton')
+				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+			elseif not Players.LocalPlayer.PlayerGui:FindFirstChild('SplashScreenGui') and not Players.LocalPlayer:GetAttribute('InMenuCharacterCreator') and not Players.LocalPlayer.PlayerGui:FindFirstChild('Slideshow'):FindFirstChild('SlideshowHolder').Visible then
+				local Net = require(ReplicatedStorage.Modules.Core.Net)
+
+				local func = debug.getupvalue(Net.get,2)
+				debug.setconstant(func,3,"___Bypass")
+				debug.setconstant(func,4,"___Bypass")
+
+				warn([[
+					BYPASS SUCCESSFULLY 
+					BY INPOW LUASYNC SERVICE
+				]])
+
+				identifyexecutor = nil 
+				task.wait()
+				GuiService.SelectedObject = nil
+				c().ACBYPASS = true
+			end
+		until c().ACBYPASS
+    end,warn)
+end
+
+repeat task.wait() until c().ACBYPASS
+
+local Client = Players.LocalPlayer
+local Character = Client.Character or Client.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local PlayerGui = Client:WaitForChild("PlayerGui")
+local Backpack = Client:WaitForChild("Backpack")
+
+Client.CharacterAdded:Connect(function(newCharacter)
+	Character = newCharacter
+	Humanoid = Character:WaitForChild("Humanoid")
+	RootPart = Character:WaitForChild("HumanoidRootPart")
+	Backpack = Client:WaitForChild("Backpack")
+
+	RootPart:FindFirstChild("CharacterBillboardGui").Enabled = not c().HideName
+end)
+
+local func = {}
+local RarityData = {
+	Common = Color3.fromRGB(255, 255, 255),
+	Uncommon = Color3.fromRGB(99, 255, 52),
+	Rare = Color3.fromRGB(51, 170, 255),
+	Epic = Color3.fromRGB(237, 44, 255),
+	Legendary = Color3.fromRGB(255, 150, 0),
+	Omega = Color3.fromRGB(255, 20, 51)
+}
+local DrawingsData = {
+	Players = {},
+	Item = {}
+}
+
+local DroppedFolder = workspace:FindFirstChild('DroppedItems')
+local Vehicles = workspace:FindFirstChild("Vehicles")
+
+local CurrentCamera = workspace.CurrentCamera
+
+local Char = require(ReplicatedStorage.Modules.Core.Char)
+local Util = require(ReplicatedStorage.Modules.Core.Util)
+local Data = require(ReplicatedStorage.Modules.Core.Data)
+local SprintModule = require(ReplicatedStorage.Modules.Game.Sprint)
+local Network = require(ReplicatedStorage.Modules.Core.Net)
+local RagdollModule = require(ReplicatedStorage.Modules.Game.Ragdoll)
+local VehicleSystem = require(ReplicatedStorage.Modules.Game.VehicleSystem.Vehicle)
+local CrateController = require(ReplicatedStorage.Modules.Game.CrateSystem.Crate)
+
+local Config_Manager = loadstring(game:HttpGet("https://raw.githubusercontent.com/Yenixs/ToolScript/refs/heads/main/ConfigManager.luau"))()('Blockspin_ZahraHunEDITION',c())
+Config_Manager.SC()
+
+local function GetDistanceRoot(Objective)
+	if typeof(Objective) == "Instance" then
+		if Objective:IsA("BasePart") then
+			return (Objective.Position - RootPart.Position).Magnitude
+        elseif Objective:IsA('Model') then 
+            return (Objective:GetPivot().Position - RootPart.Position).Magnitude
+		else
+			return 0
+		end
+	elseif typeof(Objective) == "Vector3" then
+		return (Objective - RootPart.Position).Magnitude
+	elseif typeof(Objective) == "CFrame" then 
+		return (Objective.Position - RootPart.Position).Magnitude
+	end
+	return 0
+end
+
+local function GetDistanceStart(Objective, Start)
+	if typeof(Objective) == "Vector3" and typeof(Start) == "Vector3" then
+		return (Objective - Start).Magnitude		
+	elseif typeof(Objective) == "Vector2" and typeof(Start) == "Vector2" then
+		return (Objective - Start).Magnitude
+	else
+		return math.huge
+	end
+end
+
+local function IsAlive(model)
+    if not model then return false; end
+    local Humanoids = model:FindFirstChildOfClass('Humanoid')
+    if not Humanoids then return false; end
+    local RootParts = model:FindFirstChild('HumanoidRootPart')
+    if not RootParts then return false;  end
+    return Humanoids.Health > 0 and true or false
+end
+
+local function UserData() 
+	local a = {}
+
+	function a.Money()
+		local hand_balance = Data.money.hand
+		local bank_balance = Data.money.bank
+		return {
+			Hand = hand_balance,
+			Bank = bank_balance,
+		}
+	end
+
+	return a 
+end
+
+local function Connecter(e,f)
+	local Connection = e:Connect(f)
+	return Connection
+end
+
+local function Draw(type, props)
+	local obj = Drawing.new(type)
+
+	for k, v in pairs(props or {}) do obj[k] = v end
+
+	return obj
+end
+
+local function SortAttribute(instance)
+	local keys = {}
+
+	for key in pairs(instance:GetAttributes()) do
+		table.insert(keys, key)
+	end
+
+	table.sort(keys)
+
+	return keys
+end
+
+local function IsBehindWall(startPos, endPos)
+	if not startPos or not endPos then
+		return false
+	end
+	local ray = Ray.new(startPos, endPos - startPos)
+	local ignoreList = {}
+	if Character then
+		table.insert(ignoreList, Character)
+	end
+	local targets = c().AimAssiantTarget
+	if targets then
+		table.insert(ignoreList, targets)
+	end
+	local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList)
+	return hit ~= nil
+end
+
+local function WorldToViewPoint(obj)
+	local pos = typeof(obj) == "Vector3" and obj or obj.Position
+	local vp, onScreen = CurrentCamera:WorldToViewportPoint(pos)
+	return vp, onScreen
+end;
+
+local function solveQuadratic(A, B, C)
+	local discriminant = B^2 - 4*A*C
+	if discriminant < 0 then
+		return nil, nil
+	end
+
+	local sqrtDisc = math.sqrt(discriminant)
+	local root1 = (-B - sqrtDisc) / (2*A)
+	local root2 = (-B + sqrtDisc) / (2*A)
+
+	return root1, root2
+end
+
+local function getBallisticFlightTime(direction, gravity, projectileSpeed)
+	local root1, root2 = solveQuadratic(
+		gravity:Dot(gravity) / 3.8,
+		gravity:Dot(direction) - projectileSpeed^2,
+		direction:Dot(direction)
+	);
+
+	if root1 and root2 then
+		if root1 > 0 and root1 < root2 then
+			return math.sqrt(root1);
+		elseif root2 > 0 and root2 < root1 then
+			return math.sqrt(root2);
+		end;
+	end;
+
+	return 0;
+end;
+
+local function projectileDrop(acceleration, time)
+	return 0.001 * acceleration * (time ^ 2)
+end
+
+local function PredictPosition(targetPos, approxVel, travelTime, gravity)
+	return targetPos + approxVel * travelTime + projectileDrop(gravity,travelTime)
+end
+
+local function GetDeltaY(basePositionY, currentPositionY, offset)
+	local targetY = basePositionY - offset
+	local deltaY = targetY - currentPositionY
+	return deltaY
+end
+
+do
+	do
+		local Circle = Draw("Circle", {
+			Visible = false,
+			Color = Color3.fromRGB(255, 255, 255),
+			Radius = 200,
+			Thickness = 1,
+			Filled = false
+		})
+		
+		for i, v in pairs(Players:GetPlayers()) do
+			if v ~= Client then
+				DrawingsData.Players[v] = {
+					BoxAround = Draw("Square",{
+						Visible = false,
+						Color = Color3.fromRGB(255, 0, 0),
+						Thickness = 1,
+						Transparency = 1,
+						Filled = false
+					}),
+
+					IsTargetAim = Draw("Square",{
+						Visible = false,
+						Color = Color3.fromRGB(255, 255, 255),
+						Thickness = 1,
+						Transparency = 1,
+						Filled = false
+					}),
+
+					HpBar = Draw("Line", {
+						Visible = false,
+						Color = Color3.new(0, 1, 0),
+						Thickness = 2
+					}),
+
+					Name = Draw("Text",{
+						Visible = false,
+						Color = Color3.new(1, 1, 1),
+						Size = 15,
+						Center = true,
+						Outline = true,
+						OutlineColor = Color3.new(0, 0, 0),
+						Text = Players[v.Name].Name
+					}),
+
+					Distance = Draw("Text",{
+						Visible = false,
+						Color = Color3.new(1, 1, 1),
+						Size = 15,
+						Center = true,
+						Outline = true,
+						OutlineColor = Color3.new(0, 0, 0),
+						Text = ""
+					}),
+
+					AimTracer = Draw("Line", {
+						Visible = false,
+						Color = Color3.fromRGB(255, 255, 255),
+						Thickness = 1
+					})
+				}
+			end
+		end
+			
+		Connecter(Players.PlayerAdded,function(player)
+			if player ~= Client then
+				DrawingsData.Players[player] = {
+					BoxAround = Draw("Square",{
+						Visible = false,
+						Color = Color3.fromRGB(255, 0, 0),
+						Thickness = 1,
+						Transparency = 1,
+						Filled = false
+					}),
+
+					IsTargetAim = Draw("Square",{
+						Visible = false,
+						Color = Color3.fromRGB(255, 255, 255),
+						Thickness = 1,
+						Transparency = 1,
+						Filled = false
+					}),
+
+					HpBar = Draw("Line", {
+						Visible = false,
+						Color = Color3.new(0, 1, 0),
+						Thickness = 2
+					}),
+
+					Name = Draw("Text",{
+						Visible = false,
+						Color = Color3.new(1, 1, 1),
+						Size = 15,
+						Center = true,
+						Outline = true,
+						OutlineColor = Color3.new(0, 0, 0),
+						Text = player.Name
+					}),
+
+					Distance = Draw("Text",{
+						Visible = false,
+						Color = Color3.new(1, 1, 1),
+						Size = 15,
+						Center = true,
+						Outline = true,
+						OutlineColor = Color3.new(0, 0, 0),
+						Text = ""
+					}),
+
+					AimTracer = Draw("Line", {
+						Visible = false,
+						Color = Color3.fromRGB(255, 255, 255),
+						Thickness = 1
+					})
+				}
+				task.wait()
+			end
+		end)
+					
+		Connecter(Players.PlayerRemoving,function(player)
+			if DrawingsData.Players[player] then
+				for _, drawing in pairs(DrawingsData.Players[player]) do
+					if drawing.Remove then
+						drawing:Remove()
+						task.wait()
+					end
+				end
+				DrawingsData.Players[player] = nil
+			end
+		end)
+
+		Connecter(RunService.Heartbeat, function()
+			if c().AntiAimAssiant then   
+				local HumanoidModule = Char.get_hum()
+				if HumanoidModule and not HumanoidModule:GetAttribute("HasBeenDowned") then 
+					local RootPartModule = Char.get_hrp()
+					local A,B,C = RootPartModule.Velocity,RootPartModule.AssemblyLinearVelocity,RootPartModule.AssemblyAngularVelocity
+					RootPartModule.Velocity = Vector3.new(math.random(-100000,999999),math.random(-100000,999999),math.random(-100000,999999))
+					RootPartModule.AssemblyLinearVelocity = Vector3.new(math.random(-100000,999999),math.random(-100000,999999),math.random(-100000,999999))
+					RootPartModule.AssemblyAngularVelocity = Vector3.new(math.random(-100000,999999),math.random(-100000,999999),math.random(-100000,999999))
+					RunService.RenderStepped:Wait()
+					RootPartModule.Velocity = A
+					RootPartModule.AssemblyLinearVelocity = B
+					RootPartModule.AssemblyAngularVelocity = C
+				end
+			end
+		end)
+
+		Connecter(RunService.RenderStepped, function()
+			if Circle  then
+				Circle.Radius = c().PovSize or 200
+				Circle.Visible = c().AimAssiant or false
+				Circle.Color = c().RainbowPov and Color3.fromHSV((tick() % 5) / 5, 1, 1) or Color3.fromRGB(255, 255, 255)
+				Circle.Position = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
+			end
+						
+			for _, DrawObject in pairs(DrawingsData.Players) do
+				DrawObject.AimTracer.Visible = false
+				DrawObject.IsTargetAim.Visible = false
+			end
+
+				
+			local ClosestTarget, ClosestDistance = nil, math.huge
+
+			for _, TargetChar in pairs(Char.get_all()) do
+				if TargetChar ~= Character and IsAlive(TargetChar) then
+					local GetTargetPlayer = Players:GetPlayerFromCharacter(TargetChar)
+					if GetTargetPlayer and not GetTargetPlayer:GetAttribute("InMenuCharacterCreator") and not GetTargetPlayer:GetAttribute("InSplashScreen") and not GetTargetPlayer:GetAttribute('IsSafeZoneProtected') and not TargetChar:GetAttribute('IsSpawnProtected') then
+						local Root = TargetChar:FindFirstChild("HumanoidRootPart")
+						if Root then
+							if not (c().FriendIngore and GetTargetPlayer:IsFriendsWith(Client.UserId)) then
+								local ScreenPos, OnScreen = WorldToViewPoint(Root)
+								if OnScreen then
+									local Vector2ScreenPos = Vector2.new(ScreenPos.X, ScreenPos.Y)
+									local DistanceStart = GetDistanceStart(Vector2ScreenPos, Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2))
+									if DistanceStart <= Circle.Radius and DistanceStart < ClosestDistance then
+										ClosestTarget = TargetChar
+										ClosestDistance = DistanceStart
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+
+			c().AimAssiantTarget = ClosestTarget
+
+			if ClosestTarget then  
+				local GetTargetPlayer = Players:GetPlayerFromCharacter(ClosestTarget)
+				if GetTargetPlayer then  
+					local DrawObject = DrawingsData.Players[GetTargetPlayer]
+					if DrawObject then  
+						local SelectPart = ClosestTarget:FindFirstChild((c().PartTargetSelected or "Head"))
+						if SelectPart then  
+							local PositionScreen, OnScreen = WorldToViewPoint(SelectPart)
+
+							DrawObject.AimTracer.Color = Color3.fromRGB(125, 21, 19)
+
+							DrawObject.AimTracer.Visible = (c().AimAssiant and OnScreen) or false
+							DrawObject.AimTracer.From = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
+							DrawObject.AimTracer.To = Vector2.new(PositionScreen.X, PositionScreen.Y)
+
+							DrawObject.IsTargetAim.Size = Vector2.new(1000 / PositionScreen.Z, 1000 / PositionScreen.Z)
+							DrawObject.IsTargetAim.Position = Vector2.new(PositionScreen.X - Vector2.new(1000 / PositionScreen.Z, 1000 / PositionScreen.Z).X / 2, PositionScreen.Y - Vector2.new(1000 / PositionScreen.Z, 1000 / PositionScreen.Z).Y / 2)
+							DrawObject.IsTargetAim.Color = Color3.fromRGB(180, 0, 0)
+							DrawObject.IsTargetAim.Visible = (c().AimAssiant and OnScreen) or false
+						end
+					end
+				end
+			end
+			
+			for PlayerObject, DrawObject in pairs(DrawingsData.Players) do  
+				if PlayerObject and IsAlive(PlayerObject.Character) then  
+					local CharP = PlayerObject.Character
+					local Root = CharP:FindFirstChild('HumanoidRootPart')
+					local Head = CharP:FindFirstChild('Head')
+					local ControllerNpc = CharP:FindFirstChildOfClass("Humanoid")
+					if Root and Head and ControllerNpc then 
+						local PositionRoot, OnScreen = WorldToViewPoint(Root)
+						if OnScreen then  
+							local PositionHead,_ = WorldToViewPoint(Head.Position + Vector3.new(0, 0.5, 0))
+							local PositionLeg,_ = WorldToViewPoint(Root.Position - Vector3.new(0, 3, 0))
+							local ScaleRoot = 1000 / PositionRoot.Z
+
+							DrawObject.BoxAround.Size = Vector2.new(ScaleRoot, PositionHead.Y - PositionLeg.Y)
+							DrawObject.BoxAround.Position = Vector2.new(PositionRoot.X - DrawObject.BoxAround.Size.X / 2, PositionRoot.Y - DrawObject.BoxAround.Size.Y / 2)
+							DrawObject.BoxAround.Visible = c().BoxPlayerVisual or false
+							DrawObject.BoxAround.Color = (c().FriendIngore and PlayerObject:IsFriendsWith(Client.UserId)) and Color3.fromRGB(4, 43, 150) or PlayerObject:GetAttribute('IsSafeZoneProtected') == true and Color3.fromRGB(7, 255, 44) or CharP:GetAttribute('IsSpawnProtected') == true and Color3.fromRGB(3, 41, 255) or Color3.fromRGB(201, 12, 204)
+
+							DrawObject.Name.Position = Vector2.new(PositionHead.X, PositionHead.Y - 20)
+							DrawObject.Name.Text = PlayerObject.Name
+							DrawObject.Name.Visible = c().NamePlayerVisual or false 
+
+							DrawObject.Distance.Text = "[" .. math.floor(GetDistanceRoot(Root)) .. "m]"
+							DrawObject.Distance.Position = Vector2.new(PositionHead.X, PositionLeg.Y + 5)
+							DrawObject.Distance.Visible = c().DistancePlayerVisual or false
+
+							local HealthNpc = ControllerNpc.Health / ControllerNpc.MaxHealth
+							DrawObject.HpBar.From = Vector2.new(DrawObject.BoxAround.Position.X + DrawObject.BoxAround.Size.X + 5, DrawObject.BoxAround.Position.Y + DrawObject.BoxAround.Size.Y * (1 - HealthNpc))
+							DrawObject.HpBar.To = Vector2.new(DrawObject.BoxAround.Position.X + DrawObject.BoxAround.Size.X + 5, DrawObject.BoxAround.Position.Y + DrawObject.BoxAround.Size.Y)
+							DrawObject.HpBar.Color = Color3.new(1 - HealthNpc, HealthNpc, 0)
+							DrawObject.HpBar.Visible = c().HealthPlayerVisual or false
+
+						else  
+							for _,DrawingObjectData in pairs(DrawObject) do 
+								DrawingObjectData.Visible = false
+							end
+						end
+					else  
+						for _,DrawingObjectData in pairs(DrawObject) do 
+							DrawingObjectData.Visible = false
+						end
+					end
+				else  
+					for _,DrawingObjectData in pairs(DrawObject) do 
+						DrawingObjectData.Visible = false
+					end
+				end
+			end
+					
+			for DropItem, DrawObject in pairs(DrawingsData.Item) do
+				if not DropItem or not DropItem.Parent then
+					if DrawObject.BoxAround then DrawObject.BoxAround:Remove() end
+					if DrawObject.NameItem then DrawObject.NameItem:Remove() end
+					if DrawObject.Distance then DrawObject.Distance:Remove() end
+					DrawingsData.Item[DropItem] = nil
+				end
+			end
+			
+			for _, DropItemObject in pairs(DroppedFolder:GetChildren()) do
+				if DropItemObject:IsA("Model") and DropItemObject:FindFirstChild("PickUpZone") and not DropItemObject:GetAttribute("Locked") then 
+					if not DrawingsData.Item[DropItemObject] then 
+						DrawingsData.Item[DropItemObject] = {
+							BoxAround = Draw("Square", {
+								Color = Color3.fromRGB(255, 0, 0),
+								Thickness = 1,
+								Filled = false
+							}),
+							NameItem = Draw("Text", {
+								Color = Color3.fromRGB(255, 255, 255),
+								Outline = true,
+								Center = true
+							}),
+							Distance = Draw("Text", {
+								Color = Color3.fromRGB(255, 255, 255),
+								Outline = true,
+								Center = true
+							})
+						}
+					end
+				end
+			end
+			
+			for ItemObject, DrawObject in pairs(DrawingsData.Item) do   
+				local PickUpZone = ItemObject.PickUpZone
+				local Position2D, OnScreen = WorldToViewPoint(PickUpZone)
+
+				if OnScreen then 
+        local RarityName = ReplicatedStorage:FindFirstChild("Items"):FindFirstChild(ItemObject:GetAttribute("item_type")):FindFirstChild(ItemObject.Name):GetAttribute("RarityName")
+        local StateVisibleDrop = ((ItemObject.Name == "Money" and (c().ItemDropVisual or false)) or (#c().BlacklistRarityDropVisual == 0 and (c().ItemDropVisual or false)) or (#c().BlacklistRarityDropVisual > 0 and not table.find(c().BlacklistRarityDropVisual, RarityName) and (c().ItemDropVisual or false))) or false
+        
+        -- นำค่าที่คำนวณได้ (StateVisibleDrop) ไปใช้กับ Object
+        DrawObject.BoxAround.Visible = StateVisibleDrop
+    else
+        -- ถ้าไม่อยู่บนหน้าจอ ให้ซ่อนไว้เสมอ
+        DrawObject.BoxAround.Visible = false
+    end
+					DrawObject.BoxAround.Size = Vector2.new(15,15)
+DrawObject.BoxAround.Position = Vector2.new(Position2D.X - 15 / 2, Position2D.Y - 15 / 2)
+DrawObject.BoxAround.Visible = true
+-- โค้ดของคุณควรจะมีโครงสร้างประมาณนี้:
+if ... then -- (เปิดบรรทัด 547)
+    do -- (เปิดบรรทัด 543)
+        DrawObject.BoxAround.Size = Vector2.new(15,15)
+        DrawObject.BoxAround.Position = Vector2.new(Position2D.X - 15 / 2, Position2D.Y - 15 / 2)
+        DrawObject.BoxAround.Visible = true
+    end -- <--- เพิ่มอันนี้เพื่อปิด 'do'
+end -- <--- เพิ่มอันนี้เพื่อปิด 'if'
