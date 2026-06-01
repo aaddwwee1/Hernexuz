@@ -1,0 +1,609 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+-- 🖱️ ฟังก์ชันสำหรับทำให้ GUI ลากได้ (รองรับ PC และ Mobile)
+local function makeDraggable(frame)
+    local dragging
+    local dragInput
+    local dragStart
+    local startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        local endPos = UDim2.new(
+            startPos.X.Scale, 
+            startPos.X.Offset + delta.X, 
+            startPos.Y.Scale, 
+            startPos.Y.Offset + delta.Y
+        )
+        TweenService:Create(frame, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = endPos}):Play()
+    end
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
+-- 🎨 RARITY COLORS
+local RARITY_COLORS = {
+    ["Common"] = Color3.fromRGB(200, 200, 200),
+    ["Uncommon"] = Color3.fromRGB(86, 176, 62),
+    ["Rare"] = Color3.fromRGB(0, 162, 255),
+    ["Epic"] = Color3.fromRGB(170, 85, 255),
+    ["Legendary"] = Color3.fromRGB(255, 170, 0),
+    ["Omega"] = Color3.fromRGB(255, 75, 75),
+}
+
+-- 🗃️ WEAPON DATABASE
+local WeaponDB = {}
+
+local function registerItems(folder)
+    for _, tool in ipairs(folder:GetChildren()) do
+        local handle = tool:FindFirstChild("Handle")
+        local meshId
+        if handle then
+            local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+            if mesh then
+                meshId = mesh.MeshId
+            elseif handle:IsA("MeshPart") then
+                meshId = handle.MeshId
+            end
+        end
+
+        if meshId then
+            WeaponDB[meshId] = {
+                Name = tool:GetAttribute("DisplayName") or tool.Name,
+                Rarity = tool:GetAttribute("RarityName") or "Common",
+                ImageId = tool:GetAttribute("ImageId") or "rbxassetid://7072725737",
+            }
+        elseif tool.Name == "Fists" then
+            WeaponDB["Fists"] = {
+                Name = tool:GetAttribute("DisplayName") or "Fists",
+                Rarity = tool:GetAttribute("RarityName") or "Common",
+                ImageId = tool:GetAttribute("ImageId") or "rbxassetid://116170302967943",
+            }
+        else
+            WeaponDB[tool.Name] = {
+                Name = tool:GetAttribute("DisplayName") or tool.Name,
+                Rarity = tool:GetAttribute("RarityName") or "Common",
+                ImageId = tool:GetAttribute("ImageId") or "rbxassetid://7072725737",
+            }
+        end
+    end
+end
+
+for _, category in ipairs({"gun", "melee", "throwable", "consumable", "farming", "misc", "rod", "fish"}) do
+    local folder = ReplicatedStorage:WaitForChild("Items"):FindFirstChild(category)
+    if folder then registerItems(folder) end
+end
+
+local function getMeshId(tool)
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return nil end
+    local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+    if mesh then return mesh.MeshId end
+    if handle:IsA("MeshPart") then return handle.MeshId end
+    return nil
+end
+
+local function getWeaponInfo(tool)
+    local meshId = getMeshId(tool)
+    if meshId and WeaponDB[meshId] then
+        return WeaponDB[meshId]
+    elseif tool.Name == "Fists" and WeaponDB["Fists"] then
+        return WeaponDB["Fists"]
+    elseif WeaponDB[tool.Name] then
+        return WeaponDB[tool.Name]
+    else
+        return {
+            Name = "หมัด",
+            Rarity = "Common",
+            ImageId = "rbxassetid://116170302967943"
+        }
+    end
+end
+
+local function getHighestRarity(tools)
+    local order = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Omega=6}
+    local max = "Common"
+    for _, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+        if order[info.Rarity] and order[info.Rarity] > order[max] then
+            max = info.Rarity
+        end
+    end
+    return max
+end
+
+-- 🖼️ GUI
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local ScreenGui = Instance.new("ScreenGui", PlayerGui)
+ScreenGui.Name = "InventoryViewerGUI"
+ScreenGui.ResetOnSpawn = false
+
+-- FRAME สำหรับรายการผู้เล่น
+local listFrame = Instance.new("Frame", ScreenGui)
+listFrame.Size = UDim2.new(0, 180, 0.4, 0)
+listFrame.Position = UDim2.new(0, 10, 0.3, 0)
+listFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+listFrame.BackgroundTransparency = 0.2
+Instance.new("UICorner", listFrame).CornerRadius = UDim.new(0, 8)
+makeDraggable(listFrame)
+
+local playerList = Instance.new("ScrollingFrame", listFrame)
+playerList.Size = UDim2.new(1, -10, 1, -50)
+playerList.Position = UDim2.new(0, 5, 0, 5)
+playerList.BackgroundTransparency = 1
+playerList.ScrollBarThickness = 6
+playerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Instance.new("UIListLayout", playerList).Padding = UDim.new(0, 4)
+
+local resetButton = Instance.new("TextButton", listFrame)
+resetButton.Size = UDim2.new(1, -10, 0, 30)
+resetButton.Position = UDim2.new(0, 5, 1, -35)
+resetButton.Text = "Refresh (Auto: 1s)"
+resetButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+resetButton.TextColor3 = Color3.new(1, 1, 1)
+resetButton.Font = Enum.Font.GothamBold
+resetButton.TextScaled = true
+Instance.new("UICorner", resetButton).CornerRadius = UDim.new(0, 6)
+
+local toggleButton = Instance.new("TextButton", listFrame)
+toggleButton.Size = UDim2.new(0, 30, 0, 30)
+toggleButton.Position = UDim2.new(1, -40, 0, 0)
+toggleButton.Text = "<<"
+toggleButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextScaled = true
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0, 6)
+
+local invFrame = Instance.new("Frame", ScreenGui)
+invFrame.Size = UDim2.new(0, 350, 0, 300)
+invFrame.Position = UDim2.new(0, 200, 0.3, 0)
+invFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+invFrame.BackgroundTransparency = 0.2
+invFrame.Visible = false
+Instance.new("UICorner", invFrame).CornerRadius = UDim.new(0, 8)
+makeDraggable(invFrame)
+
+local invTitle = Instance.new("TextLabel", invFrame)
+invTitle.Size = UDim2.new(1, -40, 0, 30)
+invTitle.Position = UDim2.new(0, 5, 0, 0)
+invTitle.BackgroundTransparency = 1
+invTitle.TextColor3 = Color3.new(1, 1, 1)
+invTitle.Font = Enum.Font.GothamBold
+invTitle.TextScaled = true
+invTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local closeButton = Instance.new("TextButton", invFrame)
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 0)
+closeButton.Text = "X"
+closeButton.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextScaled = true
+Instance.new("UICorner", closeButton).CornerRadius = UDim.new(0, 6)
+
+local invList = Instance.new("ScrollingFrame", invFrame)
+invList.Position = UDim2.new(0, 10, 0, 40)
+invList.Size = UDim2.new(1, -20, 1, -50)
+invList.BackgroundTransparency = 1
+invList.ScrollBarThickness = 6
+invList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Instance.new("UIListLayout", invList).Padding = UDim.new(0, 5)
+
+closeButton.MouseButton1Click:Connect(function()
+    invFrame.Visible = false
+end)
+
+local playerButtons = {}
+local BillboardCache = {}
+local scriptEnabled = false
+local currentViewingPlayer = nil -- ตรวจสอบว่าเรากำลังดูของใครอยู่เพื่อเอาไว้ Auto Update หน้ารายละเอียดช่องเก็บของด้วย
+
+local function createBillboardForPlayer(player)
+    if not scriptEnabled or player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if BillboardCache[player] then
+        BillboardCache[player]:Destroy()
+    end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Adornee = hrp
+    billboard.Size = UDim2.new(0, 150, 0, 30)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = char
+
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    local padding = 8
+    local imageSize = 28
+    local layout = Instance.new("UIListLayout", billboard)
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, padding)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+    for i, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+        if info.Rarity ~= "Common" then
+            local img = Instance.new("ImageLabel", billboard)
+            img.Size = UDim2.new(0, imageSize, 0, imageSize)
+            img.BackgroundTransparency = 1
+            img.Image = info.ImageId
+            img.LayoutOrder = i
+
+            local uicorner = Instance.new("UICorner", img)
+            uicorner.CornerRadius = UDim.new(0, 15)
+
+            local border = Instance.new("Frame", img)
+            border.Size = UDim2.new(1, 6, 1, 6)
+            border.Position = UDim2.new(0, -3, 0, -3)
+            border.ZIndex = img.ZIndex - 1
+            border.BackgroundColor3 = RARITY_COLORS[info.Rarity] or Color3.new(1, 1, 1)
+            local borderCorner = Instance.new("UICorner", border)
+            borderCorner.CornerRadius = UDim.new(0, 8.5)
+        end
+    end
+
+    BillboardCache[player] = billboard
+end
+
+local function showInventory(player)
+    currentViewingPlayer = player
+    invTitle.Text = "Inventory: " .. player.Name
+    invFrame.Visible = true
+
+    for _, c in ipairs(invList:GetChildren()) do
+        if not c:IsA("UIListLayout") then c:Destroy() end
+    end
+
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    for _, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+
+        local frame = Instance.new("Frame", invList)
+        frame.Size = UDim2.new(1, -10, 0, 50)
+        frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        frame.BorderSizePixel = 0
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+
+        local img = Instance.new("ImageLabel", frame)
+        img.Size = UDim2.new(0, 40, 0, 40)
+        img.Position = UDim2.new(0, 5, 0, 5)
+        img.Image = info.ImageId
+        img.BackgroundTransparency = 1
+        Instance.new("UICorner", img).CornerRadius = UDim.new(0, 6)
+
+        local tooltip = Instance.new("TextLabel")
+        tooltip.Size = UDim2.new(0, 100, 0, 25)
+        tooltip.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        tooltip.TextColor3 = RARITY_COLORS[info.Rarity] or Color3.new(1,1,1)
+        tooltip.Text = info.Rarity
+        tooltip.Font = Enum.Font.GothamBold
+        tooltip.TextSize = 14
+        tooltip.TextWrapped = true
+        tooltip.Visible = false
+        tooltip.Parent = frame
+        tooltip.AnchorPoint = Vector2.new(0.5, 1)
+
+        img.MouseEnter:Connect(function()
+            tooltip.Visible = true
+            local absPos = img.AbsolutePosition
+            tooltip.Position = UDim2.new(0, absPos.X + img.AbsoluteSize.X/2, 0, absPos.Y - 30)
+            tooltip.ZIndex = 10
+        end)
+        img.MouseLeave:Connect(function()
+            tooltip.Visible = false
+        end)
+
+        local name = Instance.new("TextLabel", frame)
+        name.Size = UDim2.new(1, -50, 1, 0)
+        name.Position = UDim2.new(0, 50, 0, 0)
+        name.TextColor3 = RARITY_COLORS[info.Rarity] or Color3.new(1,1,1)
+        name.Text = info.Name
+        name.Font = Enum.Font.GothamBold
+        name.TextSize = 18
+        name.TextXAlignment = Enum.TextXAlignment.Left
+        name.BackgroundTransparency = 1
+    end
+end
+
+-- ปิดหน้าต่างแล้วล้างตัวแปร Target
+closeButton.MouseButton1Click:Connect(function()
+    invFrame.Visible = false
+    currentViewingPlayer = nil
+end)
+
+local function updatePlayerButton(player)
+    if not scriptEnabled then return end
+
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    local highestRarity = getHighestRarity(tools)
+    local buttonColor = RARITY_COLORS[highestRarity] or Color3.fromRGB(40, 40, 40)
+
+    -- ถ้ามีปุ่มอยู่แล้วให้เปลี่ยนแค่สี (ลดอาการดีเลย์และกระตุก)
+    if playerButtons[player] then
+        playerButtons[player].BackgroundColor3 = buttonColor
+    else
+        local button = Instance.new("TextButton", playerList)
+        button.Size = UDim2.new(1, -10, 0, 28)
+        button.Text = player.Name
+        button.TextScaled = true
+        button.Font = Enum.Font.GothamBold
+        button.BackgroundColor3 = buttonColor
+        button.TextColor3 = Color3.new(1, 1, 1)
+        Instance.new("UICorner", button).CornerRadius = UDim.new(0, 6)
+
+        button.MouseButton1Click:Connect(function()
+            showInventory(player)
+        end)
+        playerButtons[player] = button
+    end
+
+    createBillboardForPlayer(player)
+end
+
+local function refreshPlayerList()
+    if not scriptEnabled then return end
+
+    -- ลบปุ่มของคนที่ออกไปแล้ว
+    for player, button in pairs(playerButtons) do
+        if not Players:FindFirstChild(player.Name) then
+            if button then button:Destroy() end
+            playerButtons[player] = nil
+            if BillboardCache[player] then
+                BillboardCache[player]:Destroy()
+                BillboardCache[player] = nil
+            end
+        end
+    end
+
+    -- อัพเดตหรือสร้างปุ่มใหม่ให้ผู้เล่นปัจจุบัน
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            updatePlayerButton(p)
+        end
+    end
+
+    -- ถ้าหน้าต่างดูของกำลังเปิดใครค้างไว้ ให้รีเฟรชข้อมูลของคนนั้นสดๆ ด้วย
+    if invFrame.Visible and currentViewingPlayer and Players:FindFirstChild(currentViewingPlayer.Name) then
+        showInventory(currentViewingPlayer)
+    elseif invFrame.Visible and currentViewingPlayer and not Players:FindFirstChild(currentViewingPlayer.Name) then
+        invFrame.Visible = false
+        currentViewingPlayer = nil
+    end
+end
+
+resetButton.MouseButton1Click:Connect(refreshPlayerList)
+
+toggleButton.MouseButton1Click:Connect(function()
+    scriptEnabled = not scriptEnabled
+    if scriptEnabled then
+        toggleButton.Text = ">>"
+        listFrame.Size = UDim2.new(0, 180, 0.4, 0)
+        listFrame.Position = UDim2.new(0, 10, 0.3, 0)
+        resetButton.Visible = true
+        playerList.Visible = true
+        refreshPlayerList()
+    else
+        toggleButton.Text = "<<"
+        listFrame.Size = UDim2.new(0, 40, 0.4, 0)
+        listFrame.Position = UDim2.new(0, 10, 0.3, 0)
+        resetButton.Visible = false
+        playerList.Visible = false
+        invFrame.Visible = false
+        currentViewingPlayer = nil
+        for p, btn in pairs(playerButtons) do
+            if btn then btn:Destroy() end
+        end
+        playerButtons = {}
+        for p, bill in pairs(BillboardCache) do
+            if bill then bill:Destroy() end
+        end
+        BillboardCache = {}
+    end
+end)
+
+-- 🔔 ALERT SYSTEM
+local alertFrame = Instance.new("Frame", ScreenGui)
+alertFrame.AnchorPoint = Vector2.new(1, 1)
+alertFrame.Position = UDim2.new(1, -10, 1, -10)
+alertFrame.Size = UDim2.new(0, 300, 0, 0)
+alertFrame.BackgroundTransparency = 1
+alertFrame.ClipsDescendants = true
+
+local UIListLayout = Instance.new("UIListLayout", alertFrame)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+local function showAlert(playerName, rarity)
+    local color = RARITY_COLORS[rarity] or Color3.new(1,1,1)
+
+    local alert = Instance.new("Frame", alertFrame)
+    alert.Size = UDim2.new(1, 0, 0, 40)
+    alert.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    alert.BorderSizePixel = 0
+    alert.ClipsDescendants = true
+    alert.LayoutOrder = tick()
+    alert.BackgroundTransparency = 1
+
+    local uicorner = Instance.new("UICorner", alert)
+    uicorner.CornerRadius = UDim.new(0, 10)
+
+    local bgGradient = Instance.new("UIGradient", alert)
+    bgGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 220, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+    }
+    bgGradient.Rotation = 90
+
+    local textLabel = Instance.new("TextLabel", alert)
+    textLabel.Size = UDim2.new(1, -10, 1, 0)
+    textLabel.Position = UDim2.new(0, 5, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextSize = 15
+    textLabel.TextColor3 = color
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Text = ("ชื่อผู้เล่น : %s    ระดับความแรร์ : %s"):format(playerName, rarity)
+
+    alertFrame.Size = UDim2.new(0, 300, 0, alertFrame.Size.Y.Offset + 45)
+    alert.Size = UDim2.new(0, 0, 0, 0)
+
+    local tweenInSize = TweenService:Create(alert, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 0})
+    local tweenBounce = TweenService:Create(alert, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(1.05, 0, 0, 44)})
+    local tweenBounceBack = TweenService:Create(alert, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(1, 0, 0, 40)})
+
+    tweenInSize:Play()
+    tweenInSize.Completed:Connect(function()
+        tweenBounce:Play()
+        tweenBounce.Completed:Connect(function()
+            tweenBounceBack:Play()
+            tweenBounceBack.Completed:Connect(function()
+                task.wait(5)
+                local tweenOut = TweenService:Create(alert, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)})
+                tweenOut:Play()
+                tweenOut.Completed:Connect(function()
+                    alert:Destroy()
+                    alertFrame.Size = UDim2.new(0, 300, 0, math.max(0, alertFrame.Size.Y.Offset - 45))
+                end)
+            end)
+        end)
+    end)
+end
+
+local alertedPlayers = {}
+
+local function checkAndAlert(player)
+    local tools = {}
+    for _, container in ipairs({"Backpack", "StarterGear", "StarterPack"}) do
+        local obj = player:FindFirstChild(container)
+        if obj then
+            for _, tool in ipairs(obj:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools, tool) end
+            end
+        end
+    end
+    if player.Character then
+        for _, tool in ipairs(player.Character:GetChildren()) do
+            if tool:IsA("Tool") then table.insert(tools, tool) end
+        end
+    end
+
+    local order = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Omega=6}
+    local maxRarity = "Common"
+    for _, tool in ipairs(tools) do
+        local info = getWeaponInfo(tool)
+        if order[info.Rarity] and order[info.Rarity] > order[maxRarity] then
+            maxRarity = info.Rarity
+        end
+    end
+
+    if order[maxRarity] and order[maxRarity] >= order["Uncommon"] then
+        if not alertedPlayers[player] or alertedPlayers[player] ~= maxRarity then
+            alertedPlayers[player] = maxRarity
+            showAlert(player.Name, maxRarity)
+        end
+    else
+        alertedPlayers[player] = nil
+    end
+end
+
+-- 🔁 LOOP ประมวลผลหลัก (รวมระบบตรวจสอบ Alert และ Auto Refresh เข้าด้วยกันเพื่อความลื่นไหล)
+task.spawn(function()
+    while true do
+        if scriptEnabled then
+            -- 1. ตรวจสอบ Alert ผู้เล่นที่มีของแรร์ (ทำงานทุกๆ 0.5 วินาทีเหมือนเดิมเพื่อความไว)
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    checkAndAlert(p)
+                end
+            end
+            
+            -- 2. ระบบ Auto Refresh UI (ปุ่มผู้เล่น + หน้าต่างส่องกระเป๋า) ทำงานทุกๆ 1 วินาที
+            refreshPlayerList()
+        end
+        task.wait(1) -- ตั้งเวลาการลูปรีเฟรชหลักที่ 1 วินาที
+    end
+end)
+
+scriptEnabled = true
+toggleButton.Text = "<<"
+resetButton.Visible = true
+playerList.Visible = true
+refreshPlayerList()
